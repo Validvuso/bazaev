@@ -1,113 +1,180 @@
-import Image from 'next/image';
+'use client';
+import { useState, useRef, useEffect } from 'react';
+
+interface Topic { id: string; label: string; text: string; }
+interface Message { role: 'bot' | 'user'; text: string; offer?: string | null; loading?: boolean; }
+interface HistoryItem { role: string; content: string; }
+
+const GROQ_KEY = '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';
+
+const TOPICS: Topic[] = [
+  { id: 'civil', label: '⚖️ Гражданское', text: 'Гражданское право' },
+  { id: 'labor', label: '💼 Трудовое', text: 'Трудовое право' },
+  { id: 'family', label: '❤️ Семейное', text: 'Семейное право' },
+  { id: 'contract', label: '📄 Договоры', text: 'Договоры' },
+  { id: 'consumer', label: '🛡️ Потребитель', text: 'Защита прав потребителей' },
+  { id: 'admin', label: '📋 Административное', text: 'Административное право' },
+  { id: 'housing', label: '🏠 Жилищное', text: 'Жилищное право' },
+];
+
+const QUICK = ['Обжаловать штраф ГИБДД', 'Не платят зарплату', 'Расторгнуть договор аренды'];
+
+function getSystem(topic: string): string {
+  return `Ты — опытный российский юрист-консультант в приложении МойЮрист.
+Текущая область: ${topic}.
+Отвечай чётко, ссылайся на статьи законов РФ.
+Предлагай конкретные шаги.
+Если нужен документ — в конце добавь: [OFFER_DOC: название документа]
+Отвечай только по-русски.`;
+}
+
+function parseOffer(raw: string): { text: string; offer: string | null } {
+  const m = raw.match(/\[OFFER_DOC:\s*(.+?)\]/);
+  if (!m) return { text: raw, offer: null };
+  return { text: raw.replace(m[0], '').trim(), offer: m[1].trim() };
+}
 
 export default function Home() {
+  const [topic, setTopic] = useState<Topic>(TOPICS[0]);
+  const [messages, setMessages] = useState<Message[]>([
+    { role: 'bot', text: 'Здравствуйте! Я ваш юрист-консультант. Опишите ситуацию — разберём вместе и предложим варианты действий.' },
+  ]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const send = async (userText: string) => {
+    if (!userText.trim() || loading) return;
+    const newHistory: HistoryItem[] = [...history, { role: 'user', content: userText }];
+    setHistory(newHistory);
+    setMessages(prev => [...prev,
+      { role: 'user', text: userText },
+      { role: 'bot', text: '', loading: true },
+    ]);
+    setInput('');
+    setLoading(true);
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${GROQ_KEY}`,
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          max_tokens: 1000,
+          messages: [
+            { role: 'system', content: getSystem(topic.text) },
+            ...newHistory,
+          ],
+        }),
+      });
+      const data = await res.json();
+      const raw: string = data.choices?.[0]?.message?.content ?? 'Ошибка. Попробуйте снова.';
+      const { text: cleanText, offer } = parseOffer(raw);
+      setHistory(prev => [...prev, { role: 'assistant', content: raw }]);
+      setMessages(prev => [...prev.slice(0, -1), { role: 'bot', text: cleanText, offer }]);
+    } catch {
+      setMessages(prev => [...prev.slice(0, -1), { role: 'bot', text: 'Ошибка соединения.' }]);
+    }
+    setLoading(false);
+  };
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">app/page.tsx</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:h-auto lg:w-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{' '}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#f8fafc' }}>
+      <div style={{ background: '#185FA5', color: '#fff', padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+        <div style={{ width: 36, height: 36, borderRadius: 9, background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>⚖️</div>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>МойЮрист</div>
+          <div style={{ fontSize: 11, opacity: 0.8 }}>Юрист-консультант • Онлайн</div>
         </div>
       </div>
 
-      <div className="relative flex place-items-center before:absolute before:h-[300px] before:w-[480px] before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-[240px] after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 before:lg:h-[360px] z-[-1]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
+      <div style={{ display: 'flex', gap: 8, padding: '10px 16px', overflowX: 'auto', background: '#fff', borderBottom: '1px solid #e2e8f0', flexShrink: 0 }}>
+        {TOPICS.map(t => (
+          <button key={t.id} onClick={() => setTopic(t)} style={{
+            padding: '5px 14px', borderRadius: 99,
+            border: topic.id === t.id ? '1.5px solid #185FA5' : '1px solid #e2e8f0',
+            background: topic.id === t.id ? '#E6F1FB' : '#fff',
+            color: topic.id === t.id ? '#185FA5' : '#64748b',
+            fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap',
+            fontWeight: topic.id === t.id ? 500 : 400,
+          }}>{t.label}</button>
+        ))}
       </div>
 
-      <div className="mb-32 grid text-center lg:max-w-5xl lg:w-full lg:mb-0 lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Docs{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
-
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Learn{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Templates{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Explore the Next.js 13 playground.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Deploy{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {messages.map((m, i) => (
+          <div key={i}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexDirection: m.role === 'user' ? 'row-reverse' : 'row', maxWidth: '85%', marginLeft: m.role === 'user' ? 'auto' : 0 }}>
+              {m.role === 'bot' && (
+                <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#185FA5', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, flexShrink: 0 }}>⚖</div>
+              )}
+              <div style={{
+                padding: '10px 14px', borderRadius: 16,
+                borderBottomLeftRadius: m.role === 'bot' ? 4 : 16,
+                borderBottomRightRadius: m.role === 'user' ? 4 : 16,
+                background: m.role === 'user' ? '#185FA5' : '#fff',
+                color: m.role === 'user' ? '#fff' : '#1e293b',
+                fontSize: 14, lineHeight: 1.6,
+                boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                whiteSpace: 'pre-wrap',
+              }}>
+                {m.loading ? <span style={{ color: '#94a3b8' }}>Консультант печатает...</span> : m.text}
+              </div>
+            </div>
+            {m.offer && (
+              <div style={{ margin: '10px 0 0 36px', background: '#EFF6FF', border: '1.5px solid #185FA5', borderRadius: 12, padding: 14, maxWidth: '80%' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#0C447C', marginBottom: 4 }}>📄 {m.offer}</div>
+                <div style={{ fontSize: 12, color: '#185FA5', marginBottom: 10 }}>Готовый документ (Word + PDF) + инструкция куда подать</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: '#0C447C', marginBottom: 10 }}>3 000 ₽</div>
+                <button
+                  onClick={(e) => {
+                    (e.target as HTMLButtonElement).textContent = '✓ Заказ оформлен!';
+                    (e.target as HTMLButtonElement).style.background = '#27AE60';
+                  }}
+                  style={{ width: '100%', padding: '9px', background: '#185FA5', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer', fontWeight: 500 }}>
+                  💳 Оплатить и получить документ
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+        {messages.length === 1 && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+            {QUICK.map(q => (
+              <button key={q} onClick={() => send(q)} style={{ padding: '7px 14px', border: '1px solid #185FA5', borderRadius: 99, fontSize: 13, color: '#185FA5', background: '#fff', cursor: 'pointer' }}>{q}</button>
+            ))}
+          </div>
+        )}
+        <div ref={bottomRef} />
       </div>
-    </main>
+
+      <div style={{ padding: '10px 16px 16px', background: '#fff', borderTop: '1px solid #e2e8f0', flexShrink: 0 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', border: '1.5px solid #e2e8f0', borderRadius: 12, padding: '8px 12px' }}>
+          <input
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input); } }}
+            placeholder="Опишите вашу ситуацию..."
+            style={{ flex: 1, border: 'none', outline: 'none', fontSize: 14, background: 'transparent', color: '#1e293b' }}
+          />
+          <button
+            onClick={() => send(input)}
+            disabled={loading || !input.trim()}
+            style={{ width: 32, height: 32, borderRadius: 8, border: 'none', background: loading || !input.trim() ? '#cbd5e1' : '#185FA5', color: '#fff', cursor: loading || !input.trim() ? 'not-allowed' : 'pointer', fontSize: 16 }}>
+            ↑
+          </button>
+        </div>
+        <div style={{ fontSize: 11, color: '#94a3b8', textAlign: 'center', marginTop: 6 }}>
+          Ответы носят информационный характер и не заменяют официальную юридическую консультацию
+        </div>
+      </div>
+    </div>
   );
 }
