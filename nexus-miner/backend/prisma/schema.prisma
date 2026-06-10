@@ -1,0 +1,39 @@
+generator client { provider = "prisma-client-js" }
+datasource db { provider = "postgresql" url = env("DATABASE_URL") }
+
+model User {
+  id              Int      @id @default(autoincrement())
+  telegramId      BigInt   @unique
+  username        String?
+  firstName       String
+  lastName        String?
+  avatarUrl       String?
+  balance         Float    @default(0)
+  hashes          Float    @default(0)
+  power           Int      @default(1000)
+  isMining        Boolean  @default(true)
+  clanId          String?
+  reactorDeposits Float    @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  miningSessions  MiningSession[]
+}
+
+model MiningSession {
+  id          Int       @id @default(autoincrement())
+  userId      Int
+  startTime   DateTime  @default(now())
+  endTime     DateTime?
+  hashesMined Float     @default(0)
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ReactorEvent {
+  id          Int      @id @default(autoincrement())
+  weekStart   DateTime
+  weekEnd     DateTime
+  globalTotal Float    @default(0)
+  isActive    Boolean  @default(true)
+}
